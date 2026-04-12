@@ -151,7 +151,7 @@ QScrollArea {{
 # ==========================================
 # 1. KI MODELL & LOGIK
 # ==========================================
-ANZAHL_AKTIONEN = 32
+ANZAHL_AKTIONEN = 90
 WINKEL_SCHRITT = 360.0 / ANZAHL_AKTIONEN
 
 class RoboterDQN(nn.Module):
@@ -207,7 +207,7 @@ class TrainingWorker(QThread):
         if os.path.exists(self.modell_datei):
             modell.load_state_dict(torch.load(self.modell_datei))
             self.log_signal.emit("Setze bestehendes Training fort...")
-            epsilon = 0.5  # Startet mit etwas weniger Zufall
+            epsilon = 0.3  # Startet mit etwas weniger Zufall
         else:
             self.log_signal.emit("Starte komplett neues Training...")
             epsilon = 1.0
@@ -801,27 +801,45 @@ class MainWindow(QMainWindow):
                 for j, w in enumerate(winkel):
                     z = normalisiere_zustand(w, d, max_dist)
                     t_z = torch.tensor([z], dtype=torch.float32)
-                    heatmap[i, j] = torch.max(modell(t_z)).item()
+                    
+                    # --- NEU: Softmax Wahrscheinlichkeits-Berechnung ---
+                    q_werte = modell(t_z)[0]
+                    q_mean = q_werte.mean()
+                    q_std = q_werte.std() + 1e-6
+                    q_norm = (q_werte - q_mean) / q_std
+                    
+                    # Umwandlung in % (0 bis 100)
+                    wahrscheinlichkeiten = torch.nn.functional.softmax(q_norm * 2.0, dim=0)
+                    max_prob = torch.max(wahrscheinlichkeiten).item() * 100.0
+                    heatmap[i, j] = max_prob
 
+        # --- NEU: Dark-Theme Plot mit 0-100% Skala ---
         fig_heat, ax_heat = plt.subplots(figsize=(9, 6))
         fig_heat.patch.set_facecolor(C_BG)
         ax_heat.set_facecolor(C_SURFACE)
+        
+        # vmin=0 und vmax=100 zwingt die Skala fest auf Prozente!
         c = ax_heat.imshow(heatmap, cmap="RdYlGn", origin="lower", aspect="auto",
-                           extent=[-180, 180, 10, 300])
+                           extent=[-180, 180, 10, 300], vmin=0, vmax=100)
+                           
         ax_heat.set_xlabel("Relativer Winkel zum Ball (Grad)", color=C_MUTED)
         ax_heat.set_ylabel("Abstand zum Ball (cm)", color=C_MUTED)
-        ax_heat.set_title("KI-Zuversicht  ·  Grün = sicher, Rot = unsicher",
+        ax_heat.set_title("Trefferwahrscheinlichkeit  ·  Grün = 100%, Rot = 0%",
                           color=C_TEXT, fontsize=13, pad=12)
         ax_heat.tick_params(colors=C_MUTED)
+        
         for sp in ax_heat.spines.values():
             sp.set_color(C_BORDER)
-        cbar = fig_heat.colorbar(c, ax=ax_heat, label="Max Q-Value")
+            
+        cbar = fig_heat.colorbar(c, ax=ax_heat, label="Sicherheit (%)")
         cbar.ax.yaxis.label.set_color(C_MUTED)
         cbar.ax.tick_params(colors=C_MUTED)
+        
         ax_heat.axvline(x=-90, color="white", linestyle="--", alpha=0.4)
         ax_heat.axvline(x=90,  color="white", linestyle="--", alpha=0.4)
         ax_heat.text(0,    285, "Ball vorne",  color="white", ha="center", fontsize=9)
         ax_heat.text(-140, 285, "Ball hinten", color="white", ha="center", fontsize=9)
+        
         fig_heat.tight_layout()
         plt.show()
 

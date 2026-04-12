@@ -1,5 +1,7 @@
 # Projektübersicht: KI-gesteuerte Omnidirektionale Roboter-Navigation
 
+1.218 Params
+
 ## 🎯 1. Das Projektziel
 Entwicklung eines intelligenten Steuerungssystems für einen omnidirektionalen Roboter. Der Roboter soll ein Objekt in seiner Umgebung anvisieren und eine optimale, kollisionsfreie Route berechnen, um sich direkt vor dem Objekt zu positionieren (Winkel 0°, Abstand 0 cm). Die Entscheidungsfindung (Kognition) wird von einem trainierten Neuronalen Netz (Small/Micro AI) übernommen.
 
