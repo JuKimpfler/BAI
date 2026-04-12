@@ -827,7 +827,7 @@ class MainWindow(QMainWindow):
 
     # ── Hilfsmethoden ─────────────────────────────────────────────────────────
     def _log(self, text: str):
-        self.lbl_status.setText(f"  {text}")
+        self.lbl_status.setText(text)
 
     def _set_status(self, text: str, color: str = C_TEXT):
         self.lbl_status.setText(text)
