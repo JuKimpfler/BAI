@@ -219,7 +219,7 @@ class TrainingWorker(QThread):
         
         gamma = 0.95
         epsilon_min = 0.05
-        ziel_epoche = int(self.epochen * 0.8)
+        ziel_epoche = int(self.epochen * 0.3)
         epsilon_decay = math.pow(epsilon_min / epsilon, 1.0 / ziel_epoche) if ziel_epoche > 0 else 0.995
 
         hit_history = deque(maxlen=100) # Speichert die letzten 100 Ergebnisse (1 = Hit, 0 = Fail)
