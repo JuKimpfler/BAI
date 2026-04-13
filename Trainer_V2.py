@@ -2,7 +2,7 @@ import sys
 import math
 import random
 import os
-from collections import deque, defaultdict
+from collections import deque
 import numpy as np
 
 import torch
@@ -154,20 +154,8 @@ QScrollArea {{
 ANZAHL_AKTIONEN = 90
 WINKEL_SCHRITT = 360.0 / ANZAHL_AKTIONEN
 
-# ─── Trainings-Stabilitäts-Parameter ─────────────────────────────────────────
-MEMORY_SIZE           = 100_000   # Größerer Replay-Puffer für langfristiges Training
-LEARNING_RATE         = 0.0005    # Reduzierte Lernrate für stabileres Lernen
-GRADIENT_CLIP_NORM    = 500.0     # Gelockert auf 500.0 für 10.000er Rewards
-# ─── Reward-Konstanten ───────────────────────────────────────────────────────
-REWARD_SUCCESSFUL_HIT = 10_000    # Ball mit korrektem Winkel getroffen
-REWARD_CRASH          = -200      # Verringert von -1000, damit die KI keine Angst vorm Ball hat
-REWARD_WALL           = -500      # Wand berührt
-REWARD_STEP           = -1        # Zeitstrafe pro Schritt
-# ─── Action-Jump-Penalty (Reward Shaping) ────────────────────────────────────
-DEFAULT_ACTION_JUMP_PENALTY = 0.0 # Standardmäßig deaktiviert! (Stärke der Penalty)
-
 class RoboterDQN(nn.Module):
-    def __init__(self, neuronen=256):
+    def __init__(self, neuronen=64):
         super().__init__()
         self.netzwerk = nn.Sequential(
             nn.Linear(2, neuronen),
@@ -195,20 +183,16 @@ def berechne_zustand(r_x, r_y, r_w, b_x, b_y):
 # 2. DER TRAININGS-THREAD (Läuft im Hintergrund)
 # ==========================================
 class TrainingWorker(QThread):
-    update_signal = pyqtSignal(int, float, float, float, float, float, float)  # Epoche, Epsilon, Reward, Hit-Rate, Loss, Effizienz, Ø-Schritte
+    update_signal = pyqtSignal(int, float, float, float, float) # Epoche, Epsilon, Reward, Hit-Rate, Loss
     log_signal = pyqtSignal(str)
     finished_signal = pyqtSignal()
 
-    def __init__(self, epochen, neuronen, modell_datei, action_jump_penalty=0.0):
+    def __init__(self, epochen, neuronen, modell_datei):
         super().__init__()
         self.epochen = epochen
         self.neuronen = neuronen
         self.modell_datei = modell_datei
-        self.action_jump_penalty = action_jump_penalty
         self.running = True
-        # Heatmap-Trainingsdaten: cell → deque of (epoche, reward)
-        self.heatmap_cells: dict = defaultdict(lambda: deque(maxlen=1000))
-        self.current_epoch = 0
 
     def run(self):
         modell = RoboterDQN(self.neuronen)
@@ -217,60 +201,40 @@ class TrainingWorker(QThread):
         feld_breite, feld_hoehe = 3.0, 3.0
         max_dist = math.hypot(feld_breite, feld_hoehe) * 100
         rob_radius_cm = 11.0
-        toleranz = 20
+        toleranz = 8
 
         # Modell laden falls vorhanden
         if os.path.exists(self.modell_datei):
             modell.load_state_dict(torch.load(self.modell_datei))
             self.log_signal.emit("Setze bestehendes Training fort...")
-            epsilon = 0.05  # Nur noch 5% Zufall bei bekannten Modellen!
+            epsilon = 0.1  # Startet mit etwas weniger Zufall
         else:
             self.log_signal.emit("Starte komplett neues Training...")
             epsilon = 1.0
 
         ziel_modell.load_state_dict(modell.state_dict())
-        optimizer = optim.Adam(modell.parameters(), lr=LEARNING_RATE)
-        
-        criterion = nn.MSELoss() 
-        
-        memory = deque(maxlen=MEMORY_SIZE)     # Größerer Replay-Puffer
-        
+        optimizer = optim.Adam(modell.parameters(), lr=0.001)
+        criterion = nn.MSELoss()
+        memory = deque(maxlen=20000)
         
         gamma = 0.95
-        epsilon_min = 0.05
-        ziel_epoche = int(self.epochen * 0.3)
+        epsilon_min = 0.01
+        ziel_epoche = int(self.epochen * 0.5)
         epsilon_decay = math.pow(epsilon_min / epsilon, 1.0 / ziel_epoche) if ziel_epoche > 0 else 0.995
 
-        hit_history = deque(maxlen=100)   # Speichert die letzten 100 Ergebnisse (1 = Hit, 0 = Fail)
+        hit_history = deque(maxlen=100) # Speichert die letzten 100 Ergebnisse (1 = Hit, 0 = Fail)
         belohnungen_fenster = []
         loss_val = 0.0
-
-        # Analytics
-        efficiency_fenster: deque = deque(maxlen=200)
-        steps_hit_fenster: deque = deque(maxlen=200)
-
-        # Heatmap-Binning
-        N_ANGLE_BINS = 36   # je 10°, -180°…+180°
-        N_DIST_BINS  = 30   # je ~10 cm, 0…300 cm
-
-        def angle_bin(a: float) -> int:
-            return int((a + 180.0) / 360.0 * N_ANGLE_BINS) % N_ANGLE_BINS
-
-        def dist_bin(d: float) -> int:
-            return min(int(d / 300.0 * N_DIST_BINS), N_DIST_BINS - 1)
 
         for epoche in range(self.epochen):
             if not self.running:
                 break
 
-            self.current_epoch = epoche
-
-            b_x = random.uniform(0.5, feld_breite - 0.5)
-            b_y = random.uniform(0.5, feld_hoehe - 0.5)
+            b_x = feld_breite/2
+            b_y = feld_hoehe/2
             
-            r_x_start = random.uniform(0.2, feld_breite - 0.2)
-            r_y_start = random.uniform(0.2, feld_hoehe - 0.2)
-            r_x, r_y = r_x_start, r_y_start
+            r_x = random.uniform(0.2, feld_breite - 0.2)
+            r_y = random.uniform(0.2, feld_hoehe - 0.2)
 
             # --- SMART SPAWNING (70% Chance auf schwere Position) ---
             if random.random() < 0.70:
@@ -282,9 +246,6 @@ class TrainingWorker(QThread):
                 r_w = random.uniform(-180, 180)
 
             gesamt_belohnung = 0
-            prev_aktion = None
-            schritte = 0
-            episode_hit = False
             
             for schritt in range(300):
                 rel_w, dist = berechne_zustand(r_x, r_y, r_w, b_x, b_y)
@@ -295,15 +256,7 @@ class TrainingWorker(QThread):
                 else:
                     with torch.no_grad():
                         aktion = torch.argmax(modell(torch.tensor([zustand], dtype=torch.float32))).item()
-
-                # Action-Jump-Penalty: Kreisabstand im Aktionsraum
-                belohnung_extra = 0.0
-                if prev_aktion is not None and self.action_jump_penalty > 0.0:
-                    diff = abs(aktion - prev_aktion)
-                    circ_diff = min(diff, ANZAHL_AKTIONEN - diff)
-                    belohnung_extra = -self.action_jump_penalty * circ_diff
-                prev_aktion = aktion
-
+                        
                 ziel_rel_rad = math.radians(aktion * WINKEL_SCHRITT)
                 global_rad = math.radians(r_w) + ziel_rel_rad
                 r_x += 0.02 * math.sin(global_rad)
@@ -312,69 +265,45 @@ class TrainingWorker(QThread):
                 neu_rel_w, neu_dist = berechne_zustand(r_x, r_y, r_w, b_x, b_y)
                 neuer_zustand = normalisiere_zustand(neu_rel_w, neu_dist, max_dist)
                 
-                belohnung = float(REWARD_STEP) + belohnung_extra
+                belohnung = -1 
                 done = False
-                schritte += 1
                 
                 if neu_dist <= (rob_radius_cm + 2):
                     if abs(neu_rel_w) <= toleranz:
-                        belohnung += REWARD_SUCCESSFUL_HIT
+                        belohnung = 10000
                         hit_history.append(1) # ERFOLG!
-                        episode_hit = True
                     else:
-                        belohnung += REWARD_CRASH
+                        belohnung = -1000
                         hit_history.append(0) # CRASH
                     done = True
                 elif r_x < 0 or r_x > feld_breite or r_y < 0 or r_y > feld_hoehe:
-                    belohnung += REWARD_WALL
+                    belohnung = -500
                     hit_history.append(0) # WAND
                     done = True
-                elif schritt == 299: # Timeout-Strafe! Zwingt den Roboter, sich zu beeilen!
-                    belohnung += -500
-                    hit_history.append(0)
-                    done = True
                 else:
-                    # Faktor für Annäherung von 10 auf 2.0 verringert! Verhindert Punkte-Farmen
-                    belohnung += (dist - neu_dist) * 2.0
+                    belohnung += (dist - neu_dist) * 15
                     
                 gesamt_belohnung += belohnung
                 memory.append((zustand, aktion, belohnung, neuer_zustand, done))
-
-                # Heatmap-Besuch protokollieren
-                self.heatmap_cells[(angle_bin(rel_w), dist_bin(dist))].append((epoche, belohnung))
-
+                
                 if done: break
-
-            # Effizienz-Metrik (nur bei Treffer)
-            if episode_hit:
-                ideal_dist_m  = math.hypot(b_x - r_x_start, b_y - r_y_start)
-                path_length_m = schritte * 0.02
-                efficiency = min(ideal_dist_m / path_length_m, 1.0) if path_length_m > 0 else 0.0
-                efficiency_fenster.append(efficiency)
-                steps_hit_fenster.append(schritte)
                 
             # Training aus dem Gedächtnis
             if len(memory) > 128:
                 batch = random.sample(memory, 128)
-                z_batch  = torch.tensor([x[0] for x in batch], dtype=torch.float32)
-                a_batch  = torch.tensor([x[1] for x in batch], dtype=torch.int64).unsqueeze(1)
-                r_batch  = torch.tensor([x[2] for x in batch], dtype=torch.float32)
+                z_batch = torch.tensor([x[0] for x in batch], dtype=torch.float32)
+                a_batch = torch.tensor([x[1] for x in batch], dtype=torch.int64).unsqueeze(1)
+                r_batch = torch.tensor([x[2] for x in batch], dtype=torch.float32)
                 nz_batch = torch.tensor([x[3] for x in batch], dtype=torch.float32)
-                d_batch  = torch.tensor([x[4] for x in batch], dtype=torch.float32)
+                d_batch = torch.tensor([x[4] for x in batch], dtype=torch.float32)
                 
                 q_werte = modell(z_batch).gather(1, a_batch).squeeze()
-
-                # Double DQN: Hauptmodell wählt Aktion, Zielmodell bewertet sie
-                with torch.no_grad():
-                    naechste_aktionen  = modell(nz_batch).argmax(1, keepdim=True)
-                    naechste_q_werte   = ziel_modell(nz_batch).gather(1, naechste_aktionen).squeeze()
-
+                naechste_q_werte = ziel_modell(nz_batch).max(1)[0]
                 erwartete_q_werte = r_batch + gamma * naechste_q_werte * (1 - d_batch)
                 
                 loss = criterion(q_werte, erwartete_q_werte.detach())
                 optimizer.zero_grad()
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(modell.parameters(), max_norm=GRADIENT_CLIP_NORM)
                 optimizer.step()
                 loss_val = loss.item()
 
@@ -386,12 +315,9 @@ class TrainingWorker(QThread):
             # GUI Update Interval (z.B. alle 10 Epochen)
             if epoche % 10 == 0 and len(belohnungen_fenster) > 0:
                 durchschnitt_reward = sum(belohnungen_fenster) / len(belohnungen_fenster)
-                hit_rate      = (sum(hit_history) / len(hit_history)) * 100 if len(hit_history) > 0 else 0
-                avg_efficiency = sum(efficiency_fenster) / len(efficiency_fenster) if efficiency_fenster else 0.0
-                avg_steps      = sum(steps_hit_fenster)  / len(steps_hit_fenster)  if steps_hit_fenster  else 0.0
+                hit_rate = (sum(hit_history) / len(hit_history)) * 100 if len(hit_history) > 0 else 0
                 
-                self.update_signal.emit(epoche, epsilon, durchschnitt_reward, hit_rate, loss_val,
-                                        avg_efficiency, avg_steps)
+                self.update_signal.emit(epoche, epsilon, durchschnitt_reward, hit_rate, loss_val)
                 belohnungen_fenster.clear()
 
             # Auto-Save
@@ -477,8 +403,6 @@ class MainWindow(QMainWindow):
         self.reward_data = []
         self.hitrate_data = []
         self.epochen_data = []
-        self.efficiency_data = []
-        self.steps_data = []
 
         self._apply_theme()
         self.initUI()
@@ -585,7 +509,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(lbl_ep)
         self.spin_epochen = QSpinBox()
         self.spin_epochen.setRange(100, 500000)
-        self.spin_epochen.setValue(50000)
+        self.spin_epochen.setValue(20000)
         self.spin_epochen.setSingleStep(1000)
         self.spin_epochen.setFixedHeight(36)
         layout.addWidget(self.spin_epochen)
@@ -594,47 +518,10 @@ class MainWindow(QMainWindow):
         lbl_nn.setStyleSheet(f"color: {C_MUTED}; font-size: 12px; background: transparent;")
         layout.addWidget(lbl_nn)
         self.combo_neuronen = QComboBox()
-        self.combo_neuronen.addItems(["64", "128", "256", "512"])
-        self.combo_neuronen.setCurrentText("256")
+        self.combo_neuronen.addItems(["64", "128", "256", "400"])
+        self.combo_neuronen.setCurrentText("64")
         self.combo_neuronen.setFixedHeight(36)
         layout.addWidget(self.combo_neuronen)
-
-        layout.addSpacing(8)
-        layout.addWidget(section_label("Reward Shaping"))
-        layout.addWidget(Divider())
-
-        self.chk_jump_penalty = QPushButton("✓  Action-Jump-Penalty")
-        self.chk_jump_penalty.setCheckable(True)
-        self.chk_jump_penalty.setChecked(False) # <--- Standardmäßig deaktiviert!
-        self.chk_jump_penalty.setFixedHeight(32)
-        self.chk_jump_penalty.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {C_PANEL};
-                color: {C_MUTED};
-                border: 1px solid {C_BORDER};
-                border-radius: 6px;
-                font-size: 12px;
-                font-weight: 600;
-                text-align: left;
-                padding-left: 8px;
-            }}
-            QPushButton:checked {{
-                background-color: {C_ACCENT};
-                color: white;
-                border-color: {C_ACCENT};
-            }}
-        """)
-        layout.addWidget(self.chk_jump_penalty)
-
-        lbl_penalty = QLabel("Penalty-Stärke")
-        lbl_penalty.setStyleSheet(f"color: {C_MUTED}; font-size: 12px; background: transparent;")
-        layout.addWidget(lbl_penalty)
-        self.spin_penalty = QSpinBox()
-        self.spin_penalty.setRange(0, 50)
-        self.spin_penalty.setValue(int(DEFAULT_ACTION_JUMP_PENALTY * 10))
-        self.spin_penalty.setSuffix(" × 0.1")
-        self.spin_penalty.setFixedHeight(36)
-        layout.addWidget(self.spin_penalty)
 
         layout.addSpacing(8)
 
@@ -693,18 +580,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(section_label("Analyse"))
         layout.addWidget(Divider())
 
-        lbl_last_n = QLabel("Heatmap: letzte N Epochen")
-        lbl_last_n.setStyleSheet(f"color: {C_MUTED}; font-size: 12px; background: transparent;")
-        layout.addWidget(lbl_last_n)
-        self.spin_last_n = QSpinBox()
-        self.spin_last_n.setRange(50, 10000)
-        self.spin_last_n.setValue(1000)
-        self.spin_last_n.setSingleStep(100)
-        self.spin_last_n.setFixedHeight(36)
-        layout.addWidget(self.spin_last_n)
-
-        layout.addSpacing(4)
-
         self.btn_heatmap = QPushButton("◈  Analyse Heatmap")
         self.btn_heatmap.setFixedHeight(38)
         self.btn_heatmap.setStyleSheet(f"""
@@ -736,15 +611,12 @@ class MainWindow(QMainWindow):
         metrics_layout = QHBoxLayout()
         metrics_layout.setSpacing(10)
 
-        self.card_epoche      = MetricCard("⏱", "Epoche",        "0 / 0",     C_ACCENT)
-        self.card_hitrate     = MetricCard("🎯", "Trefferquote",  "0 %",       C_SUCCESS)
-        self.card_epsilon     = MetricCard("🎲", "Zufall ε",      "100.0 %",   C_WARNING)
-        self.card_loss        = MetricCard("📉", "Loss",          "—",         C_DANGER)
-        self.card_efficiency  = MetricCard("📐", "Ø Effizienz",   "—",         C_ACCENT2)
-        self.card_steps       = MetricCard("👣", "Ø Schritte/Hit","—",         C_MUTED)
+        self.card_epoche   = MetricCard("⏱", "Epoche",        "0 / 0",     C_ACCENT)
+        self.card_hitrate  = MetricCard("🎯", "Trefferquote",  "0 %",       C_SUCCESS)
+        self.card_epsilon  = MetricCard("🎲", "Zufall ε",      "100.0 %",   C_WARNING)
+        self.card_loss     = MetricCard("📉", "Loss",          "—",         C_DANGER)
 
-        for card in (self.card_epoche, self.card_hitrate, self.card_epsilon,
-                     self.card_loss, self.card_efficiency, self.card_steps):
+        for card in (self.card_epoche, self.card_hitrate, self.card_epsilon, self.card_loss):
             metrics_layout.addWidget(card)
         layout.addLayout(metrics_layout)
 
@@ -820,8 +692,6 @@ class MainWindow(QMainWindow):
         self.reward_data.clear()
         self.hitrate_data.clear()
         self.epochen_data.clear()
-        self.efficiency_data.clear()
-        self.steps_data.clear()
         self.ax_reward.clear()
         self.ax_hit.clear()
         self.canvas.draw()
@@ -833,8 +703,7 @@ class MainWindow(QMainWindow):
         self.lbl_progress_pct.setText("0 %")
         self._set_status("● Training läuft …", C_WARNING)
 
-        penalty = (self.spin_penalty.value() * 0.1) if self.chk_jump_penalty.isChecked() else 0.0
-        self.worker = TrainingWorker(epochen, neuronen, modell_datei, action_jump_penalty=penalty)
+        self.worker = TrainingWorker(epochen, neuronen, modell_datei)
         self.worker.update_signal.connect(self.update_gui)
         self.worker.log_signal.connect(self._log)
         self.worker.finished_signal.connect(self.training_finished)
@@ -851,7 +720,7 @@ class MainWindow(QMainWindow):
         self.btn_stop.setEnabled(False)
         self._set_status("● Training abgeschlossen", C_SUCCESS)
 
-    def update_gui(self, epoche, epsilon, reward, hit_rate, loss, efficiency, avg_steps):
+    def update_gui(self, epoche, epsilon, reward, hit_rate, loss):
         epochen_total = self.spin_epochen.value()
         self.progress.setValue(epoche)
         pct = (epoche / epochen_total * 100) if epochen_total > 0 else 0
@@ -869,14 +738,9 @@ class MainWindow(QMainWindow):
             hr_color = C_DANGER
         self.card_hitrate.set_value(f"{hit_rate:.1f} %", hr_color)
 
-        self.card_efficiency.set_value(f"{efficiency * 100:.1f} %" if efficiency > 0 else "—")
-        self.card_steps.set_value(f"{avg_steps:.0f}" if avg_steps > 0 else "—")
-
         self.epochen_data.append(epoche)
         self.reward_data.append(reward)
         self.hitrate_data.append(hit_rate)
-        self.efficiency_data.append(efficiency)
-        self.steps_data.append(avg_steps)
 
         if len(self.epochen_data) % 5 == 0:
             self._redraw_charts()
@@ -917,122 +781,65 @@ class MainWindow(QMainWindow):
         self.canvas.draw()
 
     def show_heatmap(self):
-        """Zeigt entweder die trainingsbasierte Reward-Heatmap (letzten N Epochen)
-        oder – falls noch keine Trainingsdaten vorhanden – die modellbasierte
-        Konfidenz-Heatmap."""
+        neuronen = int(self.combo_neuronen.currentText())
+        modell_datei = f"roboter_rl_modell_{neuronen}.pth"
+        if not os.path.exists(modell_datei):
+            self._log("Kein trainiertes Modell für die Heatmap gefunden!")
+            return
 
-        N_ANGLE_BINS = 36
-        N_DIST_BINS  = 30
+        modell = RoboterDQN(neuronen)
+        modell.load_state_dict(torch.load(modell_datei))
+        modell.eval()
 
-        has_training_data = (self.worker is not None and
-                             len(self.worker.heatmap_cells) > 0)
+        abstaende = np.linspace(10, 300, 30)
+        winkel = np.linspace(-180, 180, 36)
+        heatmap = np.zeros((len(abstaende), len(winkel)))
+        max_dist = math.hypot(3.0, 3.0) * 100
 
-        if has_training_data:
-            # ── Trainingsbasierte Reward-Heatmap ──
-            last_n = self.spin_last_n.value()
-            current_ep = self.worker.current_epoch
-            min_epoch  = max(0, current_ep - last_n)
+        with torch.no_grad():
+            for i, d in enumerate(abstaende):
+                for j, w in enumerate(winkel):
+                    z = normalisiere_zustand(w, d, max_dist)
+                    t_z = torch.tensor([z], dtype=torch.float32)
+                    
+                    # --- NEU: Softmax Wahrscheinlichkeits-Berechnung ---
+                    q_werte = modell(t_z)[0]
+                    q_mean = q_werte.mean()
+                    q_std = q_werte.std() + 1e-6
+                    q_norm = (q_werte - q_mean) / q_std
+                    
+                    # Umwandlung in % (0 bis 100)
+                    wahrscheinlichkeiten = torch.nn.functional.softmax(q_norm * 2.0, dim=0)
+                    max_prob = torch.max(wahrscheinlichkeiten).item() * 100.0
+                    heatmap[i, j] = max_prob
 
-            heatmap = np.full((N_DIST_BINS, N_ANGLE_BINS), np.nan)
-
-            for (ab, db), visits in self.worker.heatmap_cells.items():
-                # Besuche im Fenster
-                relevant = [(e, r) for e, r in visits if e >= min_epoch]
-                if not relevant:
-                    continue
-                # Ø der letzten 3 Besuche
-                last3 = relevant[-3:]
-                heatmap[db, ab] = float(np.mean([r for _, r in last3]))
-
-            # Wertebereich für sinnvolle Farbgebung begrenzen
-            finite = heatmap[np.isfinite(heatmap)]
-            if finite.size > 0:
-                vmin = max(np.percentile(finite, 5), -200)
-                vmax = min(np.percentile(finite, 95),  500)
-            else:
-                vmin, vmax = -100, 100
-
-            cmap = plt.cm.RdYlGn.copy()
-            cmap.set_bad(color='#3a3a5c')   # Grau für fehlende Zellen
-
-            masked = np.ma.masked_invalid(heatmap)
-
-            fig_heat, ax_heat = plt.subplots(figsize=(10, 6))
-            fig_heat.patch.set_facecolor(C_BG)
-            ax_heat.set_facecolor(C_SURFACE)
-
-            c = ax_heat.imshow(masked, cmap=cmap, origin="lower", aspect="auto",
-                               extent=[-180, 180, 0, 300],
-                               vmin=vmin, vmax=vmax)
-
-            ax_heat.set_xlabel("Relativer Winkel zum Ball (Grad)", color=C_MUTED)
-            ax_heat.set_ylabel("Abstand zum Ball (cm)", color=C_MUTED)
-            ax_heat.set_title(
-                f"Reward-Heatmap  ·  letzte {last_n} Epochen  (Ø letzte 3 Besuche je Zelle)\n"
-                f"Grau = keine Besuche  ·  Grün = positiv  ·  Rot = negativ",
-                color=C_TEXT, fontsize=12, pad=10
-            )
-            ax_heat.tick_params(colors=C_MUTED)
-            for sp in ax_heat.spines.values():
-                sp.set_color(C_BORDER)
-
-            cbar = fig_heat.colorbar(c, ax=ax_heat, label="Ø Step-Reward")
-            cbar.ax.yaxis.label.set_color(C_MUTED)
-            cbar.ax.tick_params(colors=C_MUTED)
-
-        else:
-            # ── Modellbasierte Konfidenz-Heatmap (Fallback) ──
-            neuronen = int(self.combo_neuronen.currentText())
-            modell_datei = f"roboter_rl_modell_{neuronen}.pth"
-            if not os.path.exists(modell_datei):
-                self._log("Kein trainiertes Modell für die Heatmap gefunden!")
-                return
-
-            modell = RoboterDQN(neuronen)
-            modell.load_state_dict(torch.load(modell_datei))
-            modell.eval()
-
-            abstaende = np.linspace(10, 300, N_DIST_BINS)
-            winkel    = np.linspace(-180, 180, N_ANGLE_BINS)
-            heatmap   = np.zeros((len(abstaende), len(winkel)))
-            max_dist  = math.hypot(3.0, 3.0) * 100
-
-            with torch.no_grad():
-                for i, d in enumerate(abstaende):
-                    for j, w in enumerate(winkel):
-                        z   = normalisiere_zustand(w, d, max_dist)
-                        t_z = torch.tensor([z], dtype=torch.float32)
-                        q_werte  = modell(t_z)[0]
-                        q_mean   = q_werte.mean()
-                        q_std    = q_werte.std() + 1e-6
-                        q_norm   = (q_werte - q_mean) / q_std
-                        wahrsch  = torch.nn.functional.softmax(q_norm * 2.0, dim=0)
-                        heatmap[i, j] = torch.max(wahrsch).item() * 100.0
-
-            fig_heat, ax_heat = plt.subplots(figsize=(9, 6))
-            fig_heat.patch.set_facecolor(C_BG)
-            ax_heat.set_facecolor(C_SURFACE)
-
-            c = ax_heat.imshow(heatmap, cmap="RdYlGn", origin="lower", aspect="auto",
-                               extent=[-180, 180, 10, 300], vmin=0, vmax=100)
-
-            ax_heat.set_xlabel("Relativer Winkel zum Ball (Grad)", color=C_MUTED)
-            ax_heat.set_ylabel("Abstand zum Ball (cm)", color=C_MUTED)
-            ax_heat.set_title("Trefferwahrscheinlichkeit  ·  Grün = 100%, Rot = 0%",
-                              color=C_TEXT, fontsize=13, pad=12)
-            ax_heat.tick_params(colors=C_MUTED)
-            for sp in ax_heat.spines.values():
-                sp.set_color(C_BORDER)
-
-            cbar = fig_heat.colorbar(c, ax=ax_heat, label="Sicherheit (%)")
-            cbar.ax.yaxis.label.set_color(C_MUTED)
-            cbar.ax.tick_params(colors=C_MUTED)
-
-            ax_heat.axvline(x=-90, color="white", linestyle="--", alpha=0.4)
-            ax_heat.axvline(x=90,  color="white", linestyle="--", alpha=0.4)
-            ax_heat.text(0,    285, "Ball vorne",  color="white", ha="center", fontsize=9)
-            ax_heat.text(-140, 285, "Ball hinten", color="white", ha="center", fontsize=9)
-
+        # --- NEU: Dark-Theme Plot mit 0-100% Skala ---
+        fig_heat, ax_heat = plt.subplots(figsize=(9, 6))
+        fig_heat.patch.set_facecolor(C_BG)
+        ax_heat.set_facecolor(C_SURFACE)
+        
+        # vmin=0 und vmax=100 zwingt die Skala fest auf Prozente!
+        c = ax_heat.imshow(heatmap, cmap="RdYlGn", origin="lower", aspect="auto",
+                           extent=[-180, 180, 10, 300], vmin=0, vmax=100)
+                           
+        ax_heat.set_xlabel("Relativer Winkel zum Ball (Grad)", color=C_MUTED)
+        ax_heat.set_ylabel("Abstand zum Ball (cm)", color=C_MUTED)
+        ax_heat.set_title("Trefferwahrscheinlichkeit  ·  Grün = 100%, Rot = 0%",
+                          color=C_TEXT, fontsize=13, pad=12)
+        ax_heat.tick_params(colors=C_MUTED)
+        
+        for sp in ax_heat.spines.values():
+            sp.set_color(C_BORDER)
+            
+        cbar = fig_heat.colorbar(c, ax=ax_heat, label="Sicherheit (%)")
+        cbar.ax.yaxis.label.set_color(C_MUTED)
+        cbar.ax.tick_params(colors=C_MUTED)
+        
+        ax_heat.axvline(x=-90, color="white", linestyle="--", alpha=0.4)
+        ax_heat.axvline(x=90,  color="white", linestyle="--", alpha=0.4)
+        ax_heat.text(0,    285, "Ball vorne",  color="white", ha="center", fontsize=9)
+        ax_heat.text(-140, 285, "Ball hinten", color="white", ha="center", fontsize=9)
+        
         fig_heat.tight_layout()
         plt.show()
 

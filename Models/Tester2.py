@@ -100,7 +100,7 @@ class SimulationWorker(QThread):
         pfad_x, pfad_y = [self.r_x], [self.r_y]
         punkte = 0
         rob_radius_cm = 11.0
-        toleranz = 8
+        toleranz = 10
 
         with torch.no_grad():
             for schritt in range(400):
