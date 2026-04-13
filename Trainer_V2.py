@@ -201,7 +201,7 @@ class TrainingWorker(QThread):
         feld_breite, feld_hoehe = 3.0, 3.0
         max_dist = math.hypot(feld_breite, feld_hoehe) * 100
         rob_radius_cm = 11.0
-        toleranz = 20
+        toleranz = 10
 
         # Modell laden falls vorhanden
         if os.path.exists(self.modell_datei):

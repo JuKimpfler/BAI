@@ -100,7 +100,7 @@ class SimulationWorker(QThread):
         pfad_x, pfad_y = [self.r_x], [self.r_y]
         punkte = 0
         rob_radius_cm = 11.0
-        toleranz = 20
+        toleranz = 10
 
         with torch.no_grad():
             for schritt in range(400):
@@ -195,7 +195,7 @@ class TesterWindow(QMainWindow):
         l_feld.addWidget(self.spin_fh)
 
         l_feld.addWidget(QLabel("Modell Neuronen:"))
-        self.combo_nn = QComboBox(); self.combo_nn.addItems(["32", "50", "64", "128"]); self.combo_nn.setCurrentText("64")
+        self.combo_nn = QComboBox(); self.combo_nn.addItems(["64", "128", "256", "400"]); self.combo_nn.setCurrentText("64")
         l_feld.addWidget(self.combo_nn)
         sb_layout.addWidget(grp_feld)
 
@@ -217,8 +217,8 @@ class TesterWindow(QMainWindow):
         l_pos.addSpacing(10)
         l_pos.addWidget(QLabel("Ball X / Y:"))
         h_ball = QHBoxLayout()
-        self.s_bx = QDoubleSpinBox(); self.s_bx.setRange(0, 5); self.s_bx.setValue(2.5); self.s_bx.setSingleStep(0.1)
-        self.s_by = QDoubleSpinBox(); self.s_by.setRange(0, 5); self.s_by.setValue(2.5); self.s_by.setSingleStep(0.1)
+        self.s_bx = QDoubleSpinBox(); self.s_bx.setRange(0, 5); self.s_bx.setValue(1.5); self.s_bx.setSingleStep(0.1)
+        self.s_by = QDoubleSpinBox(); self.s_by.setRange(0, 5); self.s_by.setValue(1.5); self.s_by.setSingleStep(0.1)
         h_ball.addWidget(self.s_bx); h_ball.addWidget(self.s_by)
         l_pos.addLayout(h_ball)
         
