@@ -52,14 +52,15 @@ class RoboterDQN(nn.Module):
     def __init__(self, neuronen=64):
         super().__init__()
         self.netzwerk = nn.Sequential(
-            nn.Linear(2, neuronen), nn.ReLU(),
+            nn.Linear(3, neuronen), nn.ReLU(),
             nn.Linear(neuronen, neuronen), nn.ReLU(),
             nn.Linear(neuronen, ANZAHL_AKTIONEN)
         )
     def forward(self, x): return self.netzwerk(x)
 
 def normalisiere_zustand(winkel_deg, abstand_cm, max_dist_cm):
-    return [winkel_deg / 180.0, abstand_cm / max_dist_cm]
+    winkel_rad = math.radians(winkel_deg)
+    return [math.sin(winkel_rad), math.cos(winkel_rad), abstand_cm / max_dist_cm]
 
 def berechne_zustand(r_x, r_y, r_w, b_x, b_y):
     dx, dy = b_x - r_x, b_y - r_y
