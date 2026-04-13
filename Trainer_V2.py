@@ -158,6 +158,11 @@ WINKEL_SCHRITT = 360.0 / ANZAHL_AKTIONEN
 MEMORY_SIZE           = 100_000   # Größerer Replay-Puffer für langfristiges Training
 LEARNING_RATE         = 0.0005    # Reduzierte Lernrate für stabileres Lernen
 GRADIENT_CLIP_NORM    = 10.0      # Gradient-Clipping max-Norm
+# ─── Reward-Konstanten ───────────────────────────────────────────────────────
+REWARD_SUCCESSFUL_HIT = 10_000    # Ball mit korrektem Winkel getroffen
+REWARD_CRASH          = -1_000    # Ball mit falschem Winkel getroffen
+REWARD_WALL           = -500      # Wand berührt
+REWARD_STEP           = -1        # Zeitstrafe pro Schritt
 # ─── Action-Jump-Penalty (Reward Shaping) ────────────────────────────────────
 DEFAULT_ACTION_JUMP_PENALTY = 0.5  # Stärke der Penalty (0.0 = deaktiviert)
 
@@ -304,21 +309,21 @@ class TrainingWorker(QThread):
                 neu_rel_w, neu_dist = berechne_zustand(r_x, r_y, r_w, b_x, b_y)
                 neuer_zustand = normalisiere_zustand(neu_rel_w, neu_dist, max_dist)
                 
-                belohnung = -1.0 + belohnung_extra
+                belohnung = float(REWARD_STEP) + belohnung_extra
                 done = False
                 schritte += 1
                 
                 if neu_dist <= (rob_radius_cm + 2):
                     if abs(neu_rel_w) <= toleranz:
-                        belohnung += 10000
+                        belohnung += REWARD_SUCCESSFUL_HIT
                         hit_history.append(1) # ERFOLG!
                         episode_hit = True
                     else:
-                        belohnung += -1000
+                        belohnung += REWARD_CRASH
                         hit_history.append(0) # CRASH
                     done = True
                 elif r_x < 0 or r_x > feld_breite or r_y < 0 or r_y > feld_hoehe:
-                    belohnung += -500
+                    belohnung += REWARD_WALL
                     hit_history.append(0) # WAND
                     done = True
                 else:
@@ -856,10 +861,8 @@ class MainWindow(QMainWindow):
             hr_color = C_DANGER
         self.card_hitrate.set_value(f"{hit_rate:.1f} %", hr_color)
 
-        if efficiency > 0:
-            self.card_efficiency.set_value(f"{efficiency * 100:.1f} %")
-        if avg_steps > 0:
-            self.card_steps.set_value(f"{avg_steps:.0f}")
+        self.card_efficiency.set_value(f"{efficiency * 100:.1f} %" if efficiency > 0 else "—")
+        self.card_steps.set_value(f"{avg_steps:.0f}" if avg_steps > 0 else "—")
 
         self.epochen_data.append(epoche)
         self.reward_data.append(reward)
