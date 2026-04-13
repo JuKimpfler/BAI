@@ -201,13 +201,13 @@ class TrainingWorker(QThread):
         feld_breite, feld_hoehe = 3.0, 3.0
         max_dist = math.hypot(feld_breite, feld_hoehe) * 100
         rob_radius_cm = 11.0
-        toleranz = 10
+        toleranz = 8
 
         # Modell laden falls vorhanden
         if os.path.exists(self.modell_datei):
             modell.load_state_dict(torch.load(self.modell_datei))
             self.log_signal.emit("Setze bestehendes Training fort...")
-            epsilon = 0.3  # Startet mit etwas weniger Zufall
+            epsilon = 0.1  # Startet mit etwas weniger Zufall
         else:
             self.log_signal.emit("Starte komplett neues Training...")
             epsilon = 1.0
@@ -218,8 +218,8 @@ class TrainingWorker(QThread):
         memory = deque(maxlen=20000)
         
         gamma = 0.95
-        epsilon_min = 0.05
-        ziel_epoche = int(self.epochen * 0.8)
+        epsilon_min = 0.01
+        ziel_epoche = int(self.epochen * 0.5)
         epsilon_decay = math.pow(epsilon_min / epsilon, 1.0 / ziel_epoche) if ziel_epoche > 0 else 0.995
 
         hit_history = deque(maxlen=100) # Speichert die letzten 100 Ergebnisse (1 = Hit, 0 = Fail)
@@ -281,7 +281,7 @@ class TrainingWorker(QThread):
                     hit_history.append(0) # WAND
                     done = True
                 else:
-                    belohnung += (dist - neu_dist) * 10
+                    belohnung += (dist - neu_dist) * 15
                     
                 gesamt_belohnung += belohnung
                 memory.append((zustand, aktion, belohnung, neuer_zustand, done))
