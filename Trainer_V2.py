@@ -157,17 +157,17 @@ WINKEL_SCHRITT = 360.0 / ANZAHL_AKTIONEN
 # ─── Trainings-Stabilitäts-Parameter ─────────────────────────────────────────
 MEMORY_SIZE           = 100_000   # Größerer Replay-Puffer für langfristiges Training
 LEARNING_RATE         = 0.0005    # Reduzierte Lernrate für stabileres Lernen
-GRADIENT_CLIP_NORM    = 10.0      # Gradient-Clipping max-Norm
+GRADIENT_CLIP_NORM    = 500.0     # Gelockert auf 500.0 für 10.000er Rewards
 # ─── Reward-Konstanten ───────────────────────────────────────────────────────
 REWARD_SUCCESSFUL_HIT = 10_000    # Ball mit korrektem Winkel getroffen
-REWARD_CRASH          = -1_000    # Ball mit falschem Winkel getroffen
+REWARD_CRASH          = -200      # Verringert von -1000, damit die KI keine Angst vorm Ball hat
 REWARD_WALL           = -500      # Wand berührt
 REWARD_STEP           = -1        # Zeitstrafe pro Schritt
 # ─── Action-Jump-Penalty (Reward Shaping) ────────────────────────────────────
-DEFAULT_ACTION_JUMP_PENALTY = 0.5  # Stärke der Penalty (0.0 = deaktiviert)
+DEFAULT_ACTION_JUMP_PENALTY = 0.0 # Standardmäßig deaktiviert! (Stärke der Penalty)
 
 class RoboterDQN(nn.Module):
-    def __init__(self, neuronen=64):
+    def __init__(self, neuronen=256):
         super().__init__()
         self.netzwerk = nn.Sequential(
             nn.Linear(2, neuronen),
@@ -223,15 +223,18 @@ class TrainingWorker(QThread):
         if os.path.exists(self.modell_datei):
             modell.load_state_dict(torch.load(self.modell_datei))
             self.log_signal.emit("Setze bestehendes Training fort...")
-            epsilon = 0.3  # Startet mit etwas weniger Zufall
+            epsilon = 0.05  # Nur noch 5% Zufall bei bekannten Modellen!
         else:
             self.log_signal.emit("Starte komplett neues Training...")
             epsilon = 1.0
 
         ziel_modell.load_state_dict(modell.state_dict())
         optimizer = optim.Adam(modell.parameters(), lr=LEARNING_RATE)
-        criterion = nn.SmoothL1Loss()          # Huber-Loss statt MSE
+        
+        criterion = nn.MSELoss() 
+        
         memory = deque(maxlen=MEMORY_SIZE)     # Größerer Replay-Puffer
+        
         
         gamma = 0.95
         epsilon_min = 0.05
@@ -326,8 +329,13 @@ class TrainingWorker(QThread):
                     belohnung += REWARD_WALL
                     hit_history.append(0) # WAND
                     done = True
+                elif schritt == 299: # Timeout-Strafe! Zwingt den Roboter, sich zu beeilen!
+                    belohnung += -500
+                    hit_history.append(0)
+                    done = True
                 else:
-                    belohnung += (dist - neu_dist) * 10
+                    # Faktor für Annäherung von 10 auf 2.0 verringert! Verhindert Punkte-Farmen
+                    belohnung += (dist - neu_dist) * 2.0
                     
                 gesamt_belohnung += belohnung
                 memory.append((zustand, aktion, belohnung, neuer_zustand, done))
@@ -577,7 +585,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(lbl_ep)
         self.spin_epochen = QSpinBox()
         self.spin_epochen.setRange(100, 500000)
-        self.spin_epochen.setValue(20000)
+        self.spin_epochen.setValue(50000)
         self.spin_epochen.setSingleStep(1000)
         self.spin_epochen.setFixedHeight(36)
         layout.addWidget(self.spin_epochen)
@@ -586,8 +594,8 @@ class MainWindow(QMainWindow):
         lbl_nn.setStyleSheet(f"color: {C_MUTED}; font-size: 12px; background: transparent;")
         layout.addWidget(lbl_nn)
         self.combo_neuronen = QComboBox()
-        self.combo_neuronen.addItems(["32", "50", "64", "128"])
-        self.combo_neuronen.setCurrentText("64")
+        self.combo_neuronen.addItems(["64", "128", "256", "512"])
+        self.combo_neuronen.setCurrentText("256")
         self.combo_neuronen.setFixedHeight(36)
         layout.addWidget(self.combo_neuronen)
 
@@ -597,7 +605,7 @@ class MainWindow(QMainWindow):
 
         self.chk_jump_penalty = QPushButton("✓  Action-Jump-Penalty")
         self.chk_jump_penalty.setCheckable(True)
-        self.chk_jump_penalty.setChecked(True)
+        self.chk_jump_penalty.setChecked(False) # <--- Standardmäßig deaktiviert!
         self.chk_jump_penalty.setFixedHeight(32)
         self.chk_jump_penalty.setStyleSheet(f"""
             QPushButton {{
@@ -690,7 +698,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(lbl_last_n)
         self.spin_last_n = QSpinBox()
         self.spin_last_n.setRange(50, 10000)
-        self.spin_last_n.setValue(500)
+        self.spin_last_n.setValue(1000)
         self.spin_last_n.setSingleStep(100)
         self.spin_last_n.setFixedHeight(36)
         layout.addWidget(self.spin_last_n)
