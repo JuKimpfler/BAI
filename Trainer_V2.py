@@ -271,18 +271,18 @@ class TrainingWorker(QThread):
                 
                 if neu_dist <= (rob_radius_cm + 2):
                     if abs(neu_rel_w) <= toleranz:
-                        belohnung = 10000
+                        belohnung = 10.0
                         hit_history.append(1) # ERFOLG!
                     else:
-                        belohnung = -1000
+                        belohnung = -1.0
                         hit_history.append(0) # CRASH
                     done = True
                 elif r_x < 0 or r_x > feld_breite or r_y < 0 or r_y > feld_hoehe:
-                    belohnung = -500
+                    belohnung = -0.5
                     hit_history.append(0) # WAND
                     done = True
                 else:
-                    belohnung += (dist - neu_dist) * 15
+                    belohnung += (dist - neu_dist) * 0.1
                     
                 gesamt_belohnung += belohnung
                 memory.append((zustand, aktion, belohnung, neuer_zustand, done))
