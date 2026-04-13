@@ -59,29 +59,98 @@ Input (2)  →  Linear(2 → N)  →  ReLU  →  Linear(N → N)  →  ReLU  →
 | Wand getroffen | −500 |
 | Annäherung an Ball | +(Δdistanz × 10) |
 | Jeder Schritt (Zeitstrafe) | −1 |
+| Action-Jump-Penalty (optional) | −Stärke × Kreisabstand |
 
-### Training-Parameter
+### Training-Parameter (langzeitstabil)
 
-- Experience Replay, Batch-Größe 128
-- Target-Network-Update alle 20 Epochen
-- Epsilon-Greedy: ε = 1.0 → 0.05 (über 30 % der Epochen)
-- Optimizer: Adam, lr = 0.001, Loss: MSELoss
-- Auto-Save alle 1 000 Epochen, Resume möglich
+| Parameter | Wert | Beschreibung |
+|---|---|---|
+| Optimizer | Adam, lr = 0.0005 | Reduzierte Lernrate für stabiles Langzeit-Training |
+| Loss | `SmoothL1Loss` (Huber) | Robuster gegenüber großen Reward-Ausreißern |
+| Target-Computation | **Double DQN** | Hauptmodell wählt Aktion, Zielmodell bewertet sie |
+| Gradient Clipping | max_norm = 10.0 | Verhindert explodierende Gradienten bei großen Rewards |
+| Replay-Buffer | 100 000 Transitionen | Größerer Puffer für stabileres Lernen |
+| Target-Update | alle 20 Epochen | Unverändert |
+| Epsilon-Greedy | ε = 1.0 → 0.05 (über 30% der Epochen) | Unverändert |
+| Auto-Save | alle 1 000 Epochen | Unverändert |
 
 ---
 
 ## 📊 4. GUI-Monitoring (`Trainer_V2.py`)
 
 PyQt5 Dark-Theme Dashboard mit Echtzeit-Anzeige:
-- **Hit-Rate** (Ziel: > 80 %)
-- **Ø Reward** pro Episode
-- **Epsilon** (Explorationsrate)
-- **Loss** (MSE)
-- **Heatmap-Analyse** (Konfidenz über Winkel-/Distanz-Raum)
+
+### Metriken-Karten
+| Karte | Beschreibung |
+|---|---|
+| ⏱ Epoche | Aktueller Trainingsfortschritt |
+| 🎯 Trefferquote | Hit-Rate der letzten 100 Episoden (%) |
+| 🎲 Zufall ε | Aktuelle Explorationsrate |
+| 📉 Loss | Aktueller Huber-Loss |
+| 📐 Ø Effizienz | Ø Pfadeffizienz der letzten 200 Treffer-Episoden (%) |
+| 👣 Ø Schritte/Hit | Durchschnittliche Schritte bis zum Treffer |
+
+### Sidebar-Einstellungen
+- **Epochen** – Trainings-Dauer
+- **KI-Neuronen** – Netzwerk-Größe
+- **Action-Jump-Penalty** – an/aus und Stärke (×0.1)
+- **Heatmap: letzte N Epochen** – Rolling-Window für die Analyse-Heatmap
 
 ---
 
-## 🗂️ 5. LUT-Format & Indexierung
+## 🗺️ 5. Reward-Heatmap (Trainingsbasiert)
+
+Die Heatmap visualisiert die während des Trainings gesammelten Erfahrungen.
+
+### Darstellung
+- **X-Achse:** Relativer Winkel zum Ball (−180° … +180°)
+- **Y-Achse:** Abstand zum Ball (0 … 300 cm)
+- **Farbe:** Durchschnittlicher Step-Reward der **letzten 3 Besuche** in der Zelle, gefiltert auf das **Rolling-Window** der letzten N Epochen
+  - Grün = positiver Reward (Annäherung / Treffer)
+  - Rot = negativer Reward (Wand / Crash)
+  - Grau = Zelle wurde im Fenster nicht besucht
+
+### Rolling-Window
+Der Schieberegler „Heatmap: letzte N Epochen" in der Sidebar bestimmt, wie weit in der Vergangenheit die Besuche berücksichtigt werden. Standard: 500 Epochen.
+
+### Fallback
+Wurde noch kein Training gestartet, zeigt die Heatmap die modellbasierte Konfidenz-Analyse (wie bisher).
+
+---
+
+## 📐 6. Pfad-Effizienz-Metriken
+
+Während des Trainings werden folgende Kennzahlen berechnet (nur für Treffer-Episoden):
+
+```
+step_size_m    = 0.02  # 2 cm pro Schritt
+path_length_m  = steps_used × step_size_m
+ideal_dist_m   = hypot(ball_pos - start_pos)
+efficiency     = min(ideal_dist_m / path_length_m, 1.0)
+```
+
+- `efficiency = 1.0` → Roboter fuhr auf direktem Weg
+- `efficiency = 0.5` → Roboter brauchte doppelt so viele Schritte wie nötig
+- Rolling Average der letzten 200 Treffer-Episoden
+
+---
+
+## 🔀 7. Action-Jump-Penalty (Reward Shaping)
+
+Eine optionale Strafe für große Richtungssprünge zwischen aufeinanderfolgenden Schritten.
+
+```
+circ_diff = min(|curr - prev|, N_ACTIONS - |curr - prev|)  # Kreisabstand
+penalty   = -stärke × circ_diff
+```
+
+**Konfiguration in der GUI:**
+- Checkbox „✓ Action-Jump-Penalty" aktiviert/deaktiviert die Penalty
+- „Penalty-Stärke ×0.1": Wert 5 → Stärke 0.5 (Standard)
+
+---
+
+## 🗂️ 8. LUT-Format & Indexierung
 
 ### Diskretisierung
 
@@ -118,7 +187,7 @@ if (angle_deg > 180.0f) angle_deg -= 360.0f;  // → [-180..+180]
 
 ---
 
-## 🚀 6. Quickstart
+## 🚀 9. Quickstart
 
 ### Voraussetzungen
 
@@ -136,6 +205,20 @@ python Trainer_V2.py
 - „Training starten" klicken
 - Modell wird automatisch als `roboter_rl_modell_64.pth` gespeichert
 - Training kann jederzeit unterbrochen und fortgesetzt werden (Resume)
+
+### Tests ausführen
+
+```bash
+pip install pytest
+python -m pytest tests/ -v
+```
+
+Die Tests prüfen:
+- **Double DQN** Ziel-Berechnung (Form, Auswahllogik)
+- **Heatmap-Binning** und Rolling-Window-Filter
+- **Action-Jump-Penalty** (Kreisabstand-Berechnung)
+- **Pfad-Effizienz-Metrik**
+- **Smoke-Test**: Trainingsschleife läuft deterministisch (Seed) ohne Fehler
 
 ### LUT generieren (`tools/generate_lut_actions.py`)
 
@@ -172,7 +255,7 @@ Ein vollständiges Beispiel mit `lut_get_action()` und `action_to_rel_angle_deg(
 
 ---
 
-## 📁 7. Dateiübersicht
+## 📁 10. Dateiübersicht
 
 | Datei / Ordner | Beschreibung |
 |---|---|
@@ -181,13 +264,14 @@ Ein vollständiges Beispiel mit `lut_get_action()` und `action_to_rel_angle_deg(
 | `Tester.py` | Simulations-Tester für trainierte Modelle |
 | `Lut_Generator.py` | Einfacher LUT-Generator (Root-Verzeichnis) |
 | `tools/generate_lut_actions.py` | Erweiterter LUT-Generator mit CLI-Argumenten |
+| `tests/test_training.py` | Automatisierte pytest-Tests für Trainer-Logik |
 | `Teensy.cpp` | C++ Beispielcode für Teensy (LUT-Lookup) |
 | `Models/` | Vortrainierte Modelle (`.pth`) |
 | `roboter_rl_modell_32.pth` | Trainiertes Modell mit 32 Neuronen |
 
 ---
 
-## 🔧 8. Deployment-Flow (Zusammenfassung)
+## 🔧 11. Deployment-Flow (Zusammenfassung)
 
 ```
 1.  PC: python Trainer_V2.py
@@ -201,3 +285,12 @@ Ein vollständiges Beispiel mit `lut_get_action()` und `action_to_rel_angle_deg(
 
 4.  Teensy: lut_get_action(dist, angle) → action → Motorsteuerung
 ```
+
+---
+
+## ⚠️ 12. Kompatibilitätshinweise
+
+- **Modell-Inkompatibilität durch Änderung der Action-Anzahl:** Ältere `.pth`-Dateien mit 32 Aktionen können nicht mit dem aktuellen Modell (90 Aktionen) geladen werden. `roboter_rl_modell_32.pth` im Root-Verzeichnis ist ein altes Modell – für das aktuelle Training neue Modelle mit 64 oder mehr Neuronen erstellen.
+- **Huber-Loss vs. MSE:** Der Wechsel von `MSELoss` zu `SmoothL1Loss` verändert die Loss-Skala; historische Loss-Werte sind nicht direkt vergleichbar.
+- **Double DQN:** Beeinflusst die Q-Ziel-Werte; Fortsetzung eines mit Standard-DQN trainierten Modells ist problemlos möglich (keine Architektur-Änderung).
+

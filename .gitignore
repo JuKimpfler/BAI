@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Pytest cache
+.pytest_cache/
+tests/__pycache__/
+
+# PyTorch model files (generated during training – commit intentional ones only)
+# roboter_rl_modell_*.pth   # Uncomment if you want to exclude generated models
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
