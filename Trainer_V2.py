@@ -230,8 +230,8 @@ class TrainingWorker(QThread):
             if not self.running:
                 break
 
-            b_x = random.uniform(0.5, feld_breite - 0.5)
-            b_y = random.uniform(0.5, feld_hoehe - 0.5)
+            b_x = feld_breite/2
+            b_y = feld_hoehe/2
             
             r_x = random.uniform(0.2, feld_breite - 0.2)
             r_y = random.uniform(0.2, feld_hoehe - 0.2)
@@ -518,7 +518,7 @@ class MainWindow(QMainWindow):
         lbl_nn.setStyleSheet(f"color: {C_MUTED}; font-size: 12px; background: transparent;")
         layout.addWidget(lbl_nn)
         self.combo_neuronen = QComboBox()
-        self.combo_neuronen.addItems(["32", "50", "64", "128"])
+        self.combo_neuronen.addItems(["64", "128", "256", "400"])
         self.combo_neuronen.setCurrentText("64")
         self.combo_neuronen.setFixedHeight(36)
         layout.addWidget(self.combo_neuronen)
