@@ -172,7 +172,7 @@ def _box_filter1d_wrap(arr: np.ndarray, n: int, axis: int) -> np.ndarray:
     size = 2 * n + 1
     # Zirkuläres Padding
     pad = np.concatenate(
-        [np.take(arr, np.arange(-n, 0) % arr.shape[axis], axis=axis),
+        [np.take(arr, np.arange(-n, 0), axis=axis),
          arr,
          np.take(arr, np.arange(0, n), axis=axis)],
         axis=axis
@@ -639,8 +639,7 @@ class LutSimplifierWindow(QMainWindow):
         if self.lut_original is None:
             return
 
-        side_text = self.combo_seite.currentText()
-        side = "rechts" if "Rechts" in side_text else "links"
+        side = self._get_side()
         n_radius = self.spin_n.value()
 
         self.btn_opt.setEnabled(False)
@@ -690,8 +689,7 @@ class LutSimplifierWindow(QMainWindow):
         if not pfad:
             return
 
-        side_text = self.combo_seite.currentText()
-        side = "rechts" if "Rechts" in side_text else "links"
+        side = self._get_side()
         n_radius = self.spin_n.value()
 
         try:
@@ -701,6 +699,11 @@ class LutSimplifierWindow(QMainWindow):
         except Exception as exc:
             self.lbl_status.setStyleSheet(f"color:{C_DANGER}; font-size:11px;")
             self.lbl_status.setText(f"Speicher-Fehler: {exc}")
+
+    # ──────────────────────────────────────────────────────────────────────────
+    def _get_side(self) -> str:
+        """Gibt 'rechts' oder 'links' zurück, basierend auf dem Combo-Box-Index."""
+        return "rechts" if self.combo_seite.currentIndex() == 0 else "links"
 
     # ──────────────────────────────────────────────────────────────────────────
     def _get_feld_params(self):
