@@ -92,8 +92,15 @@ QSlider::handle:horizontal {{
 """
 
 # ─── RL-Modell Konfiguration ──────────────────────────────────────────────────
-ANZAHL_AKTIONEN = 90
-WINKEL_SCHRITT  = 360.0 / ANZAHL_AKTIONEN   # 4 Grad pro Aktion
+ANZAHL_AKTIONEN   = 90
+WINKEL_SCHRITT    = 360.0 / ANZAHL_AKTIONEN   # 4 Grad pro Aktion
+SCHRITT_GROESSE_M = 0.02    # Fahrtschritt des Roboters pro Zeitschritt (m)
+BALL_PUFFER_CM    = 2.0     # Zusatzpuffer um den Ball-Radius für Kollisionsprüfung
+SUCCESS_BASIS     = 10000   # Basis-Punkte für einen erfolgreichen Lauf
+SUCCESS_STEP_MALUS = 5      # Punktabzug pro Schritt im Erfolgsfall
+ARROW_LENGTH_FACTOR = 0.65  # Pfeillänge relativ zum Gitterschritt
+ARROW_WIDTH_FACTOR  = 0.07  # Pfeilbreite relativ zum Gitterschritt
+DISTANCE_BINS       = 30    # Anzahl Bins für Abstands-Histogramm
 
 
 class RoboterDQN(nn.Module):
@@ -225,7 +232,7 @@ class AnalyseWorker(QThread):
                     abstand_ball = math.hypot(x - self.b_x,
                                               y - self.b_y) * 100
                     # Position zu nah am Ball überspringen
-                    if abstand_ball < self.rob_radius_cm + 2:
+                    if abstand_ball < self.rob_radius_cm + BALL_PUFFER_CM:
                         verarbeitet += 1
                         continue
 
@@ -277,6 +284,8 @@ class AnalyseWorker(QThread):
         # Normalisiere success_by_orient auf Wertebereich [0, 1]
         if n_valide_pos > 0:
             success_by_orient = success_by_orient / n_valide_pos
+        else:
+            success_by_orient[:] = np.nan
 
         self.fortschritt_signal.emit(100, "✅ Analyse abgeschlossen!")
         self.ergebnis_signal.emit({
@@ -296,6 +305,7 @@ class AnalyseWorker(QThread):
             "orientierungen":    orientierungen,
             "n_valide_pos":      n_valide_pos,
             "schritt_m":    schritt_m,
+            "max_schritte": self.max_schritte,
         })
 
     # ------------------------------------------------------------------
@@ -315,15 +325,15 @@ class AnalyseWorker(QThread):
             qmax_acc.append(q.max().item())
 
             glo  = math.radians(r_w) + math.radians(akt * WINKEL_SCHRITT)
-            r_x += 0.02 * math.sin(glo)
-            r_y += 0.02 * math.cos(glo)
+            r_x += SCHRITT_GROESSE_M * math.sin(glo)
+            r_y += SCHRITT_GROESSE_M * math.cos(glo)
 
             neu_rel, neu_dist = berechne_zustand(
                 r_x, r_y, r_w, self.b_x, self.b_y)
 
-            if neu_dist <= (self.rob_radius_cm + 2):
+            if neu_dist <= (self.rob_radius_cm + BALL_PUFFER_CM):
                 if abs(neu_rel) <= self.toleranz:
-                    punkte += 10000 - schritt * 5
+                    punkte += SUCCESS_BASIS - schritt * SUCCESS_STEP_MALUS
                     return "erfolg", schritt + 1, punkte, float(np.mean(qmax_acc))
                 punkte -= 1000
                 return "crash", schritt + 1, punkte, float(np.mean(qmax_acc))
@@ -708,7 +718,7 @@ class AnalyserWindow(QMainWindow):
         v_n = v / mag
 
         step = d["schritt_m"]
-        pfeil_len = step * 0.65
+        pfeil_len = step * ARROW_LENGTH_FACTOR
 
         XX, YY = np.meshgrid(xs, ys)
 
@@ -741,7 +751,7 @@ class AnalyserWindow(QMainWindow):
             C_arr,
             cmap=cmap, norm=norm,
             units="xy", scale=1.0,
-            width=step * 0.07,
+            width=step * ARROW_WIDTH_FACTOR,
             headwidth=4, headlength=5, headaxislength=4.5,
             alpha=0.85,
         )
@@ -787,7 +797,8 @@ class AnalyserWindow(QMainWindow):
         # ── 2. Ø Schritte bis Ergebnis ────────────────────────────────────────
         ax = axes[0, 1]
         data_s = d["schritte_map"]
-        vmax_s = np.nanpercentile(data_s, 95) if not np.all(np.isnan(data_s)) else 200
+        fallback_max = float(d.get("max_schritte", 200))
+        vmax_s = np.nanpercentile(data_s, 95) if not np.all(np.isnan(data_s)) else fallback_max
         im = ax.imshow(data_s, origin="lower", extent=extent,
                        cmap="plasma_r", vmin=0, vmax=vmax_s, aspect="auto",
                        interpolation="nearest")
@@ -854,7 +865,7 @@ class AnalyserWindow(QMainWindow):
             dists_arr = np.array([x[0] for x in by_dist])
             succ_arr  = np.array([x[1] for x in by_dist])
             max_d     = max(dists_arr.max(), 1.0)
-            bins      = np.linspace(0, max_d, 30)
+            bins      = np.linspace(0, max_d, DISTANCE_BINS)
             centers   = (bins[:-1] + bins[1:]) / 2
             rates     = []
             for i in range(len(bins) - 1):
@@ -931,17 +942,25 @@ class AnalyserWindow(QMainWindow):
         orientierungen = d["orientierungen"]
         rates          = d["success_by_orient"]
 
-        if len(orientierungen) < 2:
+        # Keine validen Positionen oder zu wenige Orientierungen → Hinweistext
+        no_data = d.get("n_valide_pos", 0) == 0 or np.all(np.isnan(rates))
+
+        if len(orientierungen) < 2 or no_data:
             ax = self.fig_polar.add_subplot(111)
             ax.set_facecolor("#1a1a2e")
-            ax.text(0.5, 0.5,
-                    "Nur 1 Orientierung getestet.\n"
-                    "Erhöhe 'Orientierungen' für den Polar-Plot.",
+            msg = ("Nur 1 Orientierung getestet.\n"
+                   "Erhöhe 'Orientierungen' für den Polar-Plot."
+                   if len(orientierungen) < 2
+                   else "Keine validen Positionen – Polar-Plot nicht verfügbar.")
+            ax.text(0.5, 0.5, msg,
                     transform=ax.transAxes, ha="center", va="center",
                     color=C_MUTED, fontsize=12, multialignment="center")
             ax.axis("off")
             self.canvas_polar.draw()
             return
+
+        # NaN-Werte auf 0 setzen, damit der Plot keine Lücken hat
+        rates_clean = np.where(np.isnan(rates), 0.0, rates)
 
         ax = self.fig_polar.add_subplot(111, projection="polar")
         ax.set_facecolor("#1a1a2e")
@@ -949,12 +968,12 @@ class AnalyserWindow(QMainWindow):
         theta = np.radians(orientierungen)
         # Kurve schließen
         theta_c = np.append(theta, theta[0])
-        rates_c = np.append(rates, rates[0])
+        rates_c = np.append(rates_clean, rates_clean[0])
 
         ax.plot(theta_c, rates_c, color=C_ACCENT, linewidth=2)
         ax.fill(theta_c, rates_c, alpha=0.25, color=C_ACCENT)
 
-        r_max = max(float(rates.max()) * 1.2, 0.05)
+        r_max = max(float(rates_clean.max()) * 1.2, 0.05)
         ax.set_ylim(0, r_max)
         ax.set_theta_zero_location("N")
         ax.set_theta_direction(-1)    # Uhrzeigersinn
@@ -969,7 +988,7 @@ class AnalyserWindow(QMainWindow):
             sp.set_color(C_BORDER)
 
         # Mittelwert-Linie
-        mean_rate = float(rates.mean())
+        mean_rate = float(rates_clean.mean())
         ax.plot([0, 2 * np.pi], [mean_rate, mean_rate],
                 color=C_WARNING, linestyle="--", linewidth=1,
                 alpha=0.7, label=f"Ø {mean_rate:.2f}")
