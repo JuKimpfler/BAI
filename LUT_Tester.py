@@ -127,7 +127,7 @@ class SimulationWorker(QThread):
                 break
 
             rw, dist = berechne_zustand(self.r_x, self.r_y, self.r_w, self.b_x, self.b_y)
-            aktion = lut_nachschlagen(lut, rw, dist)
+            aktion = lut_nachschlagen(lut, rw, dist*0.7)
 
             ziel_rel_rad = math.radians(aktion * WINKEL_SCHRITT)
             global_rad = math.radians(self.r_w) + ziel_rel_rad
@@ -144,20 +144,20 @@ class SimulationWorker(QThread):
             # Status prüfen
             if neu_dist <= (rob_radius_cm + 2):
                 if abs(neu_rw) <= toleranz:
-                    punkte += 10000
+                    punkte += 100
                     self.status_signal.emit("🎯 ZIEL ERREICHT! Perfekter Winkel.", C_SUCCESS, punkte)
                 else:
-                    punkte -= 1000
+                    punkte -= 10
                     self.status_signal.emit("💥 CRASH! Winkel zu steil.", C_DANGER, punkte)
                 self.frame_signal.emit(pfad_x, pfad_y, self.r_x, self.r_y, self.r_w)
                 break
             elif self.r_x < 0 or self.r_x > self.feld_w or self.r_y < 0 or self.r_y > self.feld_h:
-                punkte -= 500
+                punkte -= 5
                 self.status_signal.emit("🧱 WAND BERÜHRT!", C_DANGER, punkte)
                 self.frame_signal.emit(pfad_x, pfad_y, self.r_x, self.r_y, self.r_w)
                 break
             else:
-                punkte -= 1  # Schritt-Abzug
+                punkte -= 2  # Schritt-Abzug
                 self.status_signal.emit("Fährt...", C_ACCENT, punkte)
 
             # Frame an GUI senden und kurz warten (Animation)
