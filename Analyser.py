@@ -18,7 +18,7 @@ import torch.nn as nn
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QDoubleSpinBox, QSpinBox, QGroupBox,
-    QComboBox, QProgressBar, QTabWidget, QSlider,
+    QComboBox, QProgressBar, QTabWidget, QSlider, QScrollArea,
 )
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
 
@@ -397,11 +397,17 @@ class AnalyserWindow(QMainWindow):
         main.setSpacing(12)
 
         # ── Sidebar ──────────────────────────────────────────────────────────
+        sidebar_scroll = QScrollArea()
+        sidebar_scroll.setFixedWidth(265)
+        sidebar_scroll.setWidgetResizable(True)
+        sidebar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        sidebar_scroll.setStyleSheet(
+            f"QScrollArea {{ background-color:{C_SURFACE}; border-radius:12px;"
+            f" border:1px solid {C_BORDER}; }}"
+            f" QScrollBar:vertical {{ background:{C_SURFACE}; width:8px; border:none; }}"
+            f" QScrollBar::handle:vertical {{ background:{C_BORDER}; border-radius:4px; }}")
         sidebar = QWidget()
-        sidebar.setFixedWidth(265)
-        sidebar.setStyleSheet(
-            f"background-color:{C_SURFACE}; border-radius:12px;"
-            f" border:1px solid {C_BORDER};")
+        sidebar.setStyleSheet("border:none;")
         sb = QVBoxLayout(sidebar)
         sb.setContentsMargins(10, 10, 10, 10)
         sb.setSpacing(8)
@@ -527,7 +533,8 @@ class AnalyserWindow(QMainWindow):
         sb.addWidget(self.lbl_status)
 
         sb.addStretch()
-        main.addWidget(sidebar)
+        sidebar_scroll.setWidget(sidebar)
+        main.addWidget(sidebar_scroll)
 
         # ── Tabs ─────────────────────────────────────────────────────────────
         self.tabs = QTabWidget()
