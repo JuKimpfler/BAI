@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# PyTorch Modelle (zu groß für git – lokal aufbewahren)
+# Auskommentiert: die .pth Dateien sind bereits im Repo
+# *.pth
+
+# Generierte LUT-Datei im Stammverzeichnis (temporäre Ausgabe von generate_lut.py)
+# Die eigentliche Datei liegt in teensy/include/robot_lut.h
+/robot_lut.h
+
+# PlatformIO Build-Artefakte
+teensy/.pio/
+teensy/.pioenvs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
