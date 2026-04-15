@@ -208,7 +208,7 @@ class TrainingWorker(QThread):
         if os.path.exists(self.modell_datei):
             modell.load_state_dict(torch.load(self.modell_datei))
             self.log_signal.emit("Setze bestehendes Training fort...")
-            epsilon = 0.3  # Startet mit etwas weniger Zufall
+            epsilon = 0.01  # Startet mit etwas weniger Zufall
         else:
             self.log_signal.emit("Starte komplett neues Training...")
             epsilon = 1.0
@@ -219,7 +219,7 @@ class TrainingWorker(QThread):
         memory = deque(maxlen=20000)
         
         gamma = 0.95
-        epsilon_min = 0.01
+        epsilon_min = 0.00
         ziel_epoche = int(self.epochen * 0.8)
         epsilon_decay = math.pow(epsilon_min / epsilon, 1.0 / ziel_epoche) if ziel_epoche > 0 else 0.995
 
@@ -238,7 +238,7 @@ class TrainingWorker(QThread):
             r_y = random.uniform(0.2, feld_hoehe - 0.2)
 
             # --- SMART SPAWNING (70% Chance auf schwere Position) ---
-            if random.random() < 0.70:
+            if random.random() < 0.60:
                 abs_winkel = math.degrees(math.atan2(b_x - r_x, b_y - r_y))
                 versatz = random.uniform(90, 270) # Ball ist im Rücken
                 r_w = (abs_winkel + versatz) % 360
