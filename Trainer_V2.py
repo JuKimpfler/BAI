@@ -252,7 +252,6 @@ class TrainingWorker(QThread):
             
             for schritt in range(300):
                 rel_w, dist = berechne_zustand(r_x, r_y, r_w, b_x, b_y)
-                sensor_dist = simuliere_ball_sensor_abstand(dist)
                 zustand = normalisiere_zustand(rel_w, dist, max_dist)
                 
                 if random.random() < epsilon:
@@ -267,7 +266,6 @@ class TrainingWorker(QThread):
                 r_y += 0.02 * math.cos(global_rad)
                 
                 neu_rel_w, neu_dist = berechne_zustand(r_x, r_y, r_w, b_x, b_y)
-                neu_sensor_dist = simuliere_ball_sensor_abstand(neu_dist)
                 neuer_zustand = normalisiere_zustand(neu_rel_w, neu_dist, max_dist)
                 
                 belohnung = -1 
@@ -286,6 +284,8 @@ class TrainingWorker(QThread):
                     hit_history.append(0) # WAND
                     done = True
                 else:
+                    sensor_dist = simuliere_ball_sensor_abstand(dist)
+                    neu_sensor_dist = simuliere_ball_sensor_abstand(neu_dist)
                     belohnung += (sensor_dist - neu_sensor_dist) * 2
                     
                 gesamt_belohnung += belohnung
