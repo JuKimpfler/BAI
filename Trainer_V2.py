@@ -284,9 +284,7 @@ class TrainingWorker(QThread):
                     hit_history.append(0) # WAND
                     done = True
                 else:
-                    sensor_dist = simuliere_ball_sensor_abstand(dist)
-                    neu_sensor_dist = simuliere_ball_sensor_abstand(neu_dist)
-                    belohnung += (sensor_dist - neu_sensor_dist) * 2
+                    belohnung += (dist - neu_dist) * 2
                     
                 gesamt_belohnung += belohnung
                 memory.append((zustand, aktion, belohnung, neuer_zustand, done))
