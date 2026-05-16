@@ -22,6 +22,7 @@ import math
 import os
 import sys
 import time
+from sensor_model import simuliere_ball_sensor_abstand
 
 # ─── Argumente ────────────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser(description="LUT-Generator für Teensy 4.0")
@@ -84,7 +85,8 @@ class RoboterDQN(nn.Module):
 
 def normalisiere_zustand(winkel_deg: float, abstand_cm: float, max_dist_cm: float):
     winkel_rad = math.radians(winkel_deg)
-    return [math.sin(winkel_rad), math.cos(winkel_rad), abstand_cm / max_dist_cm]
+    sensor_abstand_cm = simuliere_ball_sensor_abstand(abstand_cm)
+    return [math.sin(winkel_rad), math.cos(winkel_rad), sensor_abstand_cm / max_dist_cm]
 
 
 # ─── Parameter ────────────────────────────────────────────────────────────────

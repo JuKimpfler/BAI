@@ -15,6 +15,7 @@ import math
 import os
 import re
 import numpy as np
+from sensor_model import simuliere_ball_sensor_abstand
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -142,7 +143,8 @@ def lade_lut(lut_datei: str) -> list:
 def lut_nachschlagen(lut: list, winkel_deg: float, abstand_cm: float) -> int:
     """Gibt den Aktionsindex (0–89) für den gegebenen Zustand aus der LUT zurück."""
     w = int(round(winkel_deg)) % ANZAHL_WINKEL
-    a = max(0, min(200, int(round(abstand_cm))))
+    sensor_abstand_cm = simuliere_ball_sensor_abstand(abstand_cm)
+    a = max(0, min(200, int(round(sensor_abstand_cm))))
     return lut[w * ANZAHL_ABSTAENDE + a]
 
 

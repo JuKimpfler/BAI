@@ -3,6 +3,7 @@ import math
 import os
 import re
 import time
+from sensor_model import simuliere_ball_sensor_abstand
 
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QPushButton, QLabel, QDoubleSpinBox,
@@ -79,7 +80,8 @@ def lade_lut(lut_datei: str) -> list:
 def lut_nachschlagen(lut: list, winkel_deg: float, abstand_cm: float) -> int:
     """Gibt den Aktionsindex (0–89) für den gegebenen Zustand aus der LUT zurück."""
     w = int(round(winkel_deg)) % ANZAHL_WINKEL
-    a = max(0, min(200, int(round(abstand_cm))))
+    sensor_abstand_cm = simuliere_ball_sensor_abstand(abstand_cm)
+    a = max(0, min(200, int(round(sensor_abstand_cm))))
     return lut[w * ANZAHL_ABSTAENDE + a]
 
 
@@ -127,7 +129,7 @@ class SimulationWorker(QThread):
                 break
 
             rw, dist = berechne_zustand(self.r_x, self.r_y, self.r_w, self.b_x, self.b_y)
-            aktion = lut_nachschlagen(lut, rw, dist*0.7)
+            aktion = lut_nachschlagen(lut, rw, dist)
 
             ziel_rel_rad = math.radians(aktion * WINKEL_SCHRITT)
             global_rad = math.radians(self.r_w) + ziel_rel_rad

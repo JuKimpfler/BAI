@@ -3,6 +3,7 @@ import math
 import os
 import time
 import numpy as np
+from sensor_model import simuliere_ball_sensor_abstand
 
 import torch
 import torch.nn as nn
@@ -60,7 +61,8 @@ class RoboterDQN(nn.Module):
 
 def normalisiere_zustand(winkel_deg, abstand_cm, max_dist_cm):
     winkel_rad = math.radians(winkel_deg)
-    return [math.sin(winkel_rad), math.cos(winkel_rad), abstand_cm / max_dist_cm]
+    sensor_abstand_cm = simuliere_ball_sensor_abstand(abstand_cm)
+    return [math.sin(winkel_rad), math.cos(winkel_rad), sensor_abstand_cm / max_dist_cm]
 
 def berechne_zustand(r_x, r_y, r_w, b_x, b_y):
     dx, dy = b_x - r_x, b_y - r_y

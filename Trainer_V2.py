@@ -4,6 +4,7 @@ import random
 import os
 from collections import deque
 import numpy as np
+from sensor_model import simuliere_ball_sensor_abstand
 
 import torch
 import torch.nn as nn
@@ -169,7 +170,8 @@ class RoboterDQN(nn.Module):
 
 def normalisiere_zustand(winkel_deg, abstand_cm, max_dist_cm):
     winkel_rad = math.radians(winkel_deg)
-    return [math.sin(winkel_rad), math.cos(winkel_rad), abstand_cm / max_dist_cm]
+    sensor_abstand_cm = simuliere_ball_sensor_abstand(abstand_cm)
+    return [math.sin(winkel_rad), math.cos(winkel_rad), sensor_abstand_cm / max_dist_cm]
 
 def berechne_zustand(r_x, r_y, r_w, b_x, b_y):
     dx = b_x - r_x
@@ -250,6 +252,7 @@ class TrainingWorker(QThread):
             
             for schritt in range(300):
                 rel_w, dist = berechne_zustand(r_x, r_y, r_w, b_x, b_y)
+                sensor_dist = simuliere_ball_sensor_abstand(dist)
                 zustand = normalisiere_zustand(rel_w, dist, max_dist)
                 
                 if random.random() < epsilon:
@@ -264,6 +267,7 @@ class TrainingWorker(QThread):
                 r_y += 0.02 * math.cos(global_rad)
                 
                 neu_rel_w, neu_dist = berechne_zustand(r_x, r_y, r_w, b_x, b_y)
+                neu_sensor_dist = simuliere_ball_sensor_abstand(neu_dist)
                 neuer_zustand = normalisiere_zustand(neu_rel_w, neu_dist, max_dist)
                 
                 belohnung = -1 
@@ -282,7 +286,7 @@ class TrainingWorker(QThread):
                     hit_history.append(0) # WAND
                     done = True
                 else:
-                    belohnung += (dist - neu_dist) * 2
+                    belohnung += (sensor_dist - neu_sensor_dist) * 2
                     
                 gesamt_belohnung += belohnung
                 memory.append((zustand, aktion, belohnung, neuer_zustand, done))
