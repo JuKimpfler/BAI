@@ -129,6 +129,7 @@ class SimulationWorker(QThread):
                 break
 
             rw, dist = berechne_zustand(self.r_x, self.r_y, self.r_w, self.b_x, self.b_y)
+            # Distanz-Sensorabbildung (inkl. 7cm→40 Sprung) passiert in lut_nachschlagen.
             aktion = lut_nachschlagen(lut, rw, dist)
 
             ziel_rel_rad = math.radians(aktion * WINKEL_SCHRITT)
