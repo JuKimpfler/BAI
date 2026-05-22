@@ -30,6 +30,7 @@ Das Studio bündelt Training, LUT-Erstellung, LUT-Glättung und Analyse in einer
   50:0.5
   100:0.02
   ```
+  Prozentwerte werden als Fortschritt von `0` bis `100` interpretiert (auch Dezimalwerte sind möglich).
 - **Lookup Table (LUT):** Steuert Ein-/Ausgabedateien und Nachbearbeitung (LUT-Pfade, Symmetrie für rechte/linke Laufrichtung, Glättradius).
 - **Analyse:** Bestimmt Simulationsraum und Auswertungstiefe (Feldgröße, Ball-Position, Raster, Orientierungen, Max-Schritte).
 
@@ -38,6 +39,8 @@ Aktuelle Standardwerte im Studio:
 - Epochen `20000`, Neuronen `128`, Batch-Größe `256`, CPU-Threads `0` (Auto)
 - Glätt-Radius `3`, Symmetrie `rechts`
 - Analyse: Feld `3.0m x 3.0m`, Ball `(1.5, 1.5)`, Raster `5cm`, Orientierungen `8`, Max-Schritte `200`
+
+Hinweis zu `CPU-Threads = 0 (Auto)`: Das Studio verwendet dann automatisch `max(1, CPU-Kerne - 1)`.
 
 ## Start
 
