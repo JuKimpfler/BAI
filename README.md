@@ -24,13 +24,13 @@ Das Studio bündelt Training, LUT-Erstellung, LUT-Glättung und Analyse in einer
 ## Wichtige Workflow-Parameter (aus der aktuellen Studio-Datei)
 
 - **Training:** Legt Lernaufwand und Modellgröße fest (Epochen, Neuronen, Batch-Größe, CPU-Threads, Modelldatei).
-- **Epsilon-Schedule:** Definiert den Explorationsverlauf im DQN-Training als **newline-separierte** Einträge `Trainingsfortschritt in %:Epsilon-Wert`, z. B.:
+- **Epsilon-Schedule:** Definiert den Explorationsverlauf im DQN-Training als **durch Zeilenumbrüche getrennte** Einträge `Trainingsfortschritt in %:Epsilon-Wert`, z. B.:
   ```text
   0:1.0
   50:0.5
   100:0.02
   ```
-- **Lookup Table (LUT):** Steuert Ein-/Ausgabedateien und Nachbearbeitung (LUT-Pfade, Symmetrie für rechte/linke Laufrichtung, Glätt-Radius).
+- **Lookup Table (LUT):** Steuert Ein-/Ausgabedateien und Nachbearbeitung (LUT-Pfade, Symmetrie für rechte/linke Laufrichtung, Glättradius).
 - **Analyse:** Bestimmt Simulationsraum und Auswertungstiefe (Feldgröße, Ball-Position, Raster, Orientierungen, Max-Schritte).
 
 Aktuelle Standardwerte im Studio:
